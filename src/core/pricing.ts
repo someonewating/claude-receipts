@@ -24,12 +24,12 @@ interface ModelPrice {
 }
 
 const DEEPSEEK_PRICES_CNY_PER_MILLION = {
-  chat: {
+  flash: {
     inputCacheHit: 0.02,
     inputCacheMiss: 1,
     output: 2,
   },
-  reasoner: {
+  pro: {
     inputCacheHit: 0.025,
     inputCacheMiss: 3,
     output: 6,
@@ -97,15 +97,15 @@ function getDeepSeekPricing(modelName: string): ModelPrice | undefined {
     return undefined;
   }
 
-  if (normalized.includes("chat")) {
-    return DEEPSEEK_PRICES_CNY_PER_MILLION.chat;
+  if (normalized.includes("flash") || normalized.includes("chat")) {
+    return DEEPSEEK_PRICES_CNY_PER_MILLION.flash;
   }
 
-  if (normalized.includes("reasoner")) {
-    return DEEPSEEK_PRICES_CNY_PER_MILLION.reasoner;
+  if (normalized.includes("pro") || normalized.includes("reasoner")) {
+    return DEEPSEEK_PRICES_CNY_PER_MILLION.pro;
   }
 
-  return DEEPSEEK_PRICES_CNY_PER_MILLION.reasoner;
+  return DEEPSEEK_PRICES_CNY_PER_MILLION.pro;
 }
 
 function pricePerMillion(tokens: number, price: number): number {

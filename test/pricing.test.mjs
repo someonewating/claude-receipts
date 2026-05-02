@@ -6,8 +6,8 @@ import {
   getCostTotals,
 } from "../dist/core/pricing.js";
 
-test("prices deepseek-chat with CNY chat rates", () => {
-  const cost = calculateKnownModelCost("deepseek-chat", {
+test("prices deepseek-v4-flash with CNY flash rates", () => {
+  const cost = calculateKnownModelCost("deepseek-v4-flash", {
     inputTokens: 1_000_000,
     outputTokens: 1_000_000,
     cacheCreationTokens: 1_000_000,
@@ -26,8 +26,8 @@ test("prices deepseek-chat with CNY chat rates", () => {
   });
 });
 
-test("prices deepseek-reasoner with CNY reasoner rates", () => {
-  const cost = calculateKnownModelCost("deepseek-reasoner", {
+test("prices deepseek-v4-pro with CNY pro rates", () => {
+  const cost = calculateKnownModelCost("deepseek-v4-pro", {
     inputTokens: 1_000_000,
     outputTokens: 1_000_000,
     cacheCreationTokens: 1_000_000,
@@ -46,7 +46,25 @@ test("prices deepseek-reasoner with CNY reasoner rates", () => {
   });
 });
 
-test("falls back to reasoner rates for unknown DeepSeek aliases", () => {
+test("keeps compatibility with deepseek-chat and deepseek-reasoner aliases", () => {
+  const chatCost = calculateKnownModelCost("deepseek-chat", {
+    inputTokens: 1_000_000,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+  });
+  const reasonerCost = calculateKnownModelCost("deepseek-reasoner", {
+    inputTokens: 1_000_000,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+  });
+
+  assert.equal(chatCost?.amount, 1);
+  assert.equal(reasonerCost?.amount, 3);
+});
+
+test("falls back to pro rates for unknown DeepSeek aliases", () => {
   const cost = calculateKnownModelCost("provider/deepseek-custom", {
     inputTokens: 1_000_000,
     outputTokens: 0,
