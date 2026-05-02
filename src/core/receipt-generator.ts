@@ -1,11 +1,12 @@
 import type { CcusageSession } from "../types/ccusage.js";
+import type { CostCurrency } from "../types/ccusage.js";
 import type { ParsedTranscript } from "../types/transcript.js";
 import type { ReceiptConfig } from "../types/config.js";
 import {
+  formatCostTotals,
   formatCurrency,
   formatNumber,
   formatDateTime,
-  formatDuration,
 } from "../utils/formatting.js";
 import { getHeader, SEPARATOR, LIGHT_SEPARATOR } from "../utils/ascii-art.js";
 
@@ -53,6 +54,12 @@ export class ReceiptGenerator {
       data.sessionData.modelBreakdowns.length > 0
     ) {
       for (const model of data.sessionData.modelBreakdowns) {
+        const modelTotalTokens =
+          model.inputTokens +
+          model.outputTokens +
+          (model.cacheCreationTokens || 0) +
+          (model.cacheReadTokens || 0);
+
         lines.push(this.getModelName(model.modelName));
 
         // Input tokens
@@ -61,9 +68,11 @@ export class ReceiptGenerator {
             "  Input tokens",
             formatNumber(model.inputTokens),
             this.formatTokenCost(
+              model.costBreakdown?.input,
               model.inputTokens,
               model.cost,
-              data.sessionData.totalTokens,
+              modelTotalTokens,
+              model.costCurrency,
             ),
           ),
         );
@@ -74,9 +83,11 @@ export class ReceiptGenerator {
             "  Output tokens",
             formatNumber(model.outputTokens),
             this.formatTokenCost(
+              model.costBreakdown?.output,
               model.outputTokens,
               model.cost,
-              data.sessionData.totalTokens,
+              modelTotalTokens,
+              model.costCurrency,
             ),
           ),
         );
@@ -88,9 +99,11 @@ export class ReceiptGenerator {
               "  Cache write",
               formatNumber(model.cacheCreationTokens),
               this.formatTokenCost(
+                model.costBreakdown?.cacheCreation,
                 model.cacheCreationTokens,
                 model.cost,
-                data.sessionData.totalTokens,
+                modelTotalTokens,
+                model.costCurrency,
               ),
             ),
           );
@@ -102,9 +115,11 @@ export class ReceiptGenerator {
               "  Cache read",
               formatNumber(model.cacheReadTokens),
               this.formatTokenCost(
+                model.costBreakdown?.cacheRead,
                 model.cacheReadTokens,
                 model.cost,
-                data.sessionData.totalTokens,
+                modelTotalTokens,
+                model.costCurrency,
               ),
             ),
           );
@@ -117,11 +132,27 @@ export class ReceiptGenerator {
     // Totals
     lines.push(SEPARATOR);
     lines.push(
-      this.padLine("SUBTOTAL", "", formatCurrency(data.sessionData.totalCost)),
+      this.padLine(
+        "SUBTOTAL",
+        "",
+        formatCostTotals(
+          data.sessionData.totalCost,
+          data.sessionData.totalCostCurrency,
+          data.sessionData.costTotals,
+        ),
+      ),
     );
     lines.push(LIGHT_SEPARATOR);
     lines.push(
-      this.padLine("TOTAL", "", formatCurrency(data.sessionData.totalCost)),
+      this.padLine(
+        "TOTAL",
+        "",
+        formatCostTotals(
+          data.sessionData.totalCost,
+          data.sessionData.totalCostCurrency,
+          data.sessionData.costTotals,
+        ),
+      ),
     );
     lines.push(SEPARATOR);
     lines.push("");
@@ -200,13 +231,17 @@ export class ReceiptGenerator {
    * Format token cost (proportional to model cost)
    */
   private formatTokenCost(
+    tokenCost: number | undefined,
     tokens: number,
     modelCost: number,
-    totalTokens: number,
+    modelTotalTokens: number,
+    currency: CostCurrency = "USD",
   ): string {
-    const proportion = tokens / totalTokens;
-    const cost = modelCost * proportion;
-    return formatCurrency(cost);
+    const cost =
+      tokenCost ??
+      (modelTotalTokens > 0 ? modelCost * (tokens / modelTotalTokens) : 0);
+
+    return formatCurrency(cost, currency);
   }
 
   /**
@@ -222,6 +257,8 @@ export class ReceiptGenerator {
       "claude-3-5-sonnet": "Claude 3.5 Sonnet",
       "claude-3-opus": "Claude 3 Opus",
       "claude-3-haiku": "Claude 3 Haiku",
+      "deepseek-chat": "DeepSeek Chat",
+      "deepseek-reasoner": "DeepSeek Reasoner",
     };
 
     return modelMap[cleaned] || model;

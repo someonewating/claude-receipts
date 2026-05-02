@@ -1,4 +1,9 @@
-import type { ShareableReceiptData, ModelBreakdown } from "../types.js";
+import type {
+  CostCurrency,
+  CostTotal,
+  ShareableReceiptData,
+  ModelBreakdown,
+} from "../types.js";
 
 /**
  * Escape HTML entities for safe rendering
@@ -17,8 +22,27 @@ function escapeHtml(text: string): string {
 /**
  * Format currency (2 decimal places)
  */
-function formatCurrency(amount: number): string {
+function formatCurrency(amount: number, currency: CostCurrency = "USD"): string {
+  if (currency === "CNY") {
+    const decimals = amount > 0 && amount < 1 ? 4 : 2;
+    return `CNY ${amount.toFixed(decimals)}`;
+  }
+
   return `$${amount.toFixed(2)}`;
+}
+
+function formatCostTotals(
+  totalCost: number,
+  currency: CostCurrency = "USD",
+  costTotals?: CostTotal[],
+): string {
+  if (!costTotals || costTotals.length === 0) {
+    return formatCurrency(totalCost, currency);
+  }
+
+  return costTotals
+    .map((total) => formatCurrency(total.amount, total.currency))
+    .join(" + ");
 }
 
 /**
@@ -59,6 +83,8 @@ function getModelName(model: string): string {
     "claude-3-opus": "Claude 3 Opus",
     "claude-3-haiku": "Claude 3 Haiku",
     "claude-haiku-4-5": "Claude Haiku 4.5",
+    "deepseek-chat": "DeepSeek Chat",
+    "deepseek-reasoner": "DeepSeek Reasoner",
   };
   return modelMap[cleaned] || model;
 }
@@ -84,7 +110,7 @@ function renderLineItems(receipt: ShareableReceiptData): string {
     // Model name with its subtotal cost
     html += `<div class="model-header">
       <span class="model-name">${escapeHtml(getModelName(model.modelName))}</span>
-      <span class="model-cost">${formatCurrency(model.cost)}</span>
+      <span class="model-cost">${formatCurrency(model.cost, model.costCurrency)}</span>
     </div>`;
 
     html += `<div class="line-item">
@@ -125,7 +151,12 @@ export function generatePublicReceiptHtml(
   baseUrl: string,
 ): string {
   const publicUrl = `${baseUrl}/r/${id}`;
-  const description = `Claude Code session receipt - ${formatCurrency(receipt.totalCost)} spent with ${formatNumber(receipt.totalTokens)} tokens`;
+  const formattedTotal = formatCostTotals(
+    receipt.totalCost,
+    receipt.totalCostCurrency,
+    receipt.costTotals,
+  );
+  const description = `Claude Code session receipt - ${formattedTotal} spent with ${formatNumber(receipt.totalTokens)} tokens`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -388,7 +419,7 @@ export function generatePublicReceiptHtml(
       <div class="total-section">
         <div class="total">
           <span>TOTAL</span>
-          <span>${formatCurrency(receipt.totalCost)}</span>
+          <span>${formattedTotal}</span>
         </div>
       </div>
 

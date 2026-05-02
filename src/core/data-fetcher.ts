@@ -1,9 +1,11 @@
 import { execa } from "execa";
 import type {
+  CostCurrency,
   CcusageResponse,
   CcusageSession,
   ModelBreakdown,
 } from "../types/ccusage.js";
+import { calculateKnownModelCost, getCostTotals } from "./pricing.js";
 
 interface CcusageEntry {
   timestamp: string;
@@ -12,7 +14,7 @@ interface CcusageEntry {
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
   model: string;
-  costUSD: number;
+  costUSD?: number;
 }
 
 interface CcusageByIdResponse {
@@ -46,6 +48,7 @@ export class DataFetcher {
         cacheCreationTokens: number;
         cacheReadTokens: number;
         totalTokens: number;
+        costUSD: number;
       }
     >();
 
@@ -74,6 +77,7 @@ export class DataFetcher {
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
         totalTokens: 0,
+        costUSD: 0,
       };
 
       existing.inputTokens += input;
@@ -81,28 +85,50 @@ export class DataFetcher {
       existing.cacheCreationTokens += cacheCreation;
       existing.cacheReadTokens += cacheRead;
       existing.totalTokens += input + output + cacheCreation + cacheRead;
+      existing.costUSD += entry.costUSD || 0;
       modelMap.set(entry.model, existing);
     }
 
-    // Distribute totalCost across models proportionally by token count
+    // Use exact pricing for known non-Anthropic providers such as DeepSeek.
+    // Fall back to ccusage's per-entry USD cost, or proportional session cost
+    // for older ccusage output that does not include entry costs.
     const totalTokensAcrossModels = [...modelMap.values()].reduce(
       (sum, m) => sum + m.totalTokens,
       0,
     );
 
     const modelBreakdowns: ModelBreakdown[] = [...modelMap.entries()].map(
-      ([modelName, stats]) => ({
-        modelName,
-        inputTokens: stats.inputTokens,
-        outputTokens: stats.outputTokens,
-        cacheCreationTokens: stats.cacheCreationTokens,
-        cacheReadTokens: stats.cacheReadTokens,
-        cost:
-          totalTokensAcrossModels > 0
+      ([modelName, stats]) => {
+        const priced = calculateKnownModelCost(modelName, stats);
+        const fallbackCost =
+          stats.costUSD ||
+          (totalTokensAcrossModels > 0
             ? data.totalCost * (stats.totalTokens / totalTokensAcrossModels)
-            : 0,
-      }),
+            : 0);
+
+        return {
+          modelName,
+          inputTokens: stats.inputTokens,
+          outputTokens: stats.outputTokens,
+          cacheCreationTokens: stats.cacheCreationTokens,
+          cacheReadTokens: stats.cacheReadTokens,
+          cost: priced?.amount ?? fallbackCost,
+          costCurrency: priced?.currency ?? "USD",
+          costBreakdown: priced?.breakdown,
+        };
+      },
     );
+
+    const costTotals = getCostTotals(
+      modelBreakdowns.map((model) => ({
+        amount: model.cost,
+        currency: model.costCurrency || ("USD" as CostCurrency),
+      })),
+    );
+    const primaryTotal = costTotals[0] || {
+      amount: data.totalCost,
+      currency: "USD" as CostCurrency,
+    };
 
     return {
       sessionId: data.sessionId,
@@ -111,7 +137,9 @@ export class DataFetcher {
       cacheCreationTokens: totalCacheCreation,
       cacheReadTokens: totalCacheRead,
       totalTokens: data.totalTokens,
-      totalCost: data.totalCost,
+      totalCost: primaryTotal.amount,
+      totalCostCurrency: primaryTotal.currency,
+      costTotals,
       modelsUsed: [...modelMap.keys()],
       modelBreakdowns,
     };

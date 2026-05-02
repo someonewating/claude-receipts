@@ -1,5 +1,12 @@
 // Shared types for the Cloudflare Worker
 
+export type CostCurrency = "USD" | "CNY";
+
+export interface CostTotal {
+  currency: CostCurrency;
+  amount: number;
+}
+
 export interface ModelBreakdown {
   modelName: string;
   inputTokens: number;
@@ -7,6 +14,7 @@ export interface ModelBreakdown {
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
   cost: number;
+  costCurrency?: CostCurrency;
 }
 
 export interface ShareableReceiptData {
@@ -15,6 +23,8 @@ export interface ShareableReceiptData {
   sessionDate: string; // ISO 8601
   timezone?: string;
   totalCost: number;
+  totalCostCurrency?: CostCurrency;
+  costTotals?: CostTotal[];
   totalTokens: number;
   inputTokens: number;
   outputTokens: number;

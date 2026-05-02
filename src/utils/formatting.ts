@@ -1,11 +1,34 @@
 import { format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
+import type { CostCurrency, CostTotal } from "../types/ccusage.js";
 
 /**
- * Format a number as currency (USD)
+ * Format a number as currency.
  */
-export function formatCurrency(amount: number): string {
+export function formatCurrency(
+  amount: number,
+  currency: CostCurrency = "USD",
+): string {
+  if (currency === "CNY") {
+    const decimals = amount > 0 && amount < 1 ? 4 : 2;
+    return `CNY ${amount.toFixed(decimals)}`;
+  }
+
   return `$${amount.toFixed(2)}`;
+}
+
+export function formatCostTotals(
+  totalCost: number,
+  currency: CostCurrency = "USD",
+  costTotals?: CostTotal[],
+): string {
+  if (!costTotals || costTotals.length === 0) {
+    return formatCurrency(totalCost, currency);
+  }
+
+  return costTotals
+    .map((total) => formatCurrency(total.amount, total.currency))
+    .join(" + ");
 }
 
 /**

@@ -1,9 +1,10 @@
 import type { ReceiptData } from "./receipt-generator.js";
+import type { CostCurrency, CostTotal } from "../types/ccusage.js";
 import {
+  formatCostTotals,
   formatCurrency,
   formatNumber,
   formatDateTime,
-  formatDuration,
 } from "../utils/formatting.js";
 
 // Shareable receipt data structure (matches worker/src/types.ts)
@@ -13,6 +14,8 @@ export interface ShareableReceiptData {
   sessionDate: string;
   timezone?: string;
   totalCost: number;
+  totalCostCurrency?: CostCurrency;
+  costTotals?: CostTotal[];
   totalTokens: number;
   inputTokens: number;
   outputTokens: number;
@@ -25,6 +28,7 @@ export interface ShareableReceiptData {
     cacheCreationTokens?: number;
     cacheReadTokens?: number;
     cost: number;
+    costCurrency?: CostCurrency;
   }>;
   userMessageCount: number;
   assistantMessageCount: number;
@@ -44,6 +48,8 @@ export class HtmlRenderer {
       sessionDate: data.transcriptData.endTime.toISOString(),
       timezone: data.config.timezone,
       totalCost: data.sessionData.totalCost,
+      totalCostCurrency: data.sessionData.totalCostCurrency,
+      costTotals: data.sessionData.costTotals,
       totalTokens: data.sessionData.totalTokens,
       inputTokens: data.sessionData.inputTokens,
       outputTokens: data.sessionData.outputTokens,
@@ -56,6 +62,7 @@ export class HtmlRenderer {
         cacheCreationTokens: m.cacheCreationTokens,
         cacheReadTokens: m.cacheReadTokens,
         cost: m.cost,
+        costCurrency: m.costCurrency,
       })),
       userMessageCount: data.transcriptData.userMessageCount,
       assistantMessageCount: data.transcriptData.assistantMessageCount,
@@ -427,7 +434,7 @@ export class HtmlRenderer {
       <div class="total-section">
         <div class="total">
           <span>TOTAL</span>
-          <span>${formatCurrency(data.sessionData.totalCost)}</span>
+          <span>${formatCostTotals(data.sessionData.totalCost, data.sessionData.totalCostCurrency, data.sessionData.costTotals)}</span>
         </div>
       </div>
 
@@ -483,7 +490,7 @@ ${JSON.stringify(shareableData, null, 2)}
     // Log receipt info
     console.log('Claude Receipt Generated!');
     console.log('Session:', '${this.escapeHtml(data.transcriptData.sessionSlug)}');
-    console.log('Cost:', '${formatCurrency(data.sessionData.totalCost)}');
+    console.log('Cost:', '${formatCostTotals(data.sessionData.totalCost, data.sessionData.totalCostCurrency, data.sessionData.costTotals)}');
     console.log('Press ESC to close');
 
     async function shareReceipt() {
@@ -586,7 +593,7 @@ ${JSON.stringify(shareableData, null, 2)}
         // Model name with its subtotal cost
         html += `<div class="model-header">
           <span class="model-name">${this.escapeHtml(this.getModelName(model.modelName))}</span>
-          <span class="model-cost">${formatCurrency(model.cost)}</span>
+          <span class="model-cost">${formatCurrency(model.cost, model.costCurrency)}</span>
         </div>`;
 
         html += `<div class="line-item">
@@ -632,6 +639,8 @@ ${JSON.stringify(shareableData, null, 2)}
       "claude-3-opus": "Claude 3 Opus",
       "claude-3-haiku": "Claude 3 Haiku",
       "claude-haiku-4-5": "Claude Haiku 4.5",
+      "deepseek-chat": "DeepSeek Chat",
+      "deepseek-reasoner": "DeepSeek Reasoner",
     };
 
     return modelMap[cleaned] || model;

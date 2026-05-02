@@ -3,6 +3,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import type { ReceiptData } from "./receipt-generator.js";
 import {
+  formatCostTotals,
   formatCurrency,
   formatNumber,
   formatDateTime,
@@ -252,7 +253,7 @@ export class ThermalPrinterRenderer {
         b.bold(true);
         b.leftRight(
           this.getModelName(model.modelName),
-          formatCurrency(model.cost),
+          formatCurrency(model.cost, model.costCurrency),
         );
         b.bold(false);
         b.drawLine("-");
@@ -277,7 +278,14 @@ export class ThermalPrinterRenderer {
 
     // --- Total ---
     b.bold(true);
-    b.leftRight("TOTAL", formatCurrency(data.sessionData.totalCost));
+    b.leftRight(
+      "TOTAL",
+      formatCostTotals(
+        data.sessionData.totalCost,
+        data.sessionData.totalCostCurrency,
+        data.sessionData.costTotals,
+      ),
+    );
     b.bold(false);
     b.drawLine();
     b.line();
@@ -457,6 +465,8 @@ export class ThermalPrinterRenderer {
       "claude-3-5-sonnet": "Claude 3.5 Sonnet",
       "claude-3-opus": "Claude 3 Opus",
       "claude-3-haiku": "Claude 3 Haiku",
+      "deepseek-chat": "DeepSeek Chat",
+      "deepseek-reasoner": "DeepSeek Reasoner",
     };
 
     return modelMap[cleaned] || model;

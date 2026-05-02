@@ -1,4 +1,9 @@
-import type { ShareableReceiptData, ModelBreakdown } from "../types.js";
+import type {
+  CostCurrency,
+  CostTotal,
+  ShareableReceiptData,
+  ModelBreakdown,
+} from "../types.js";
 
 export interface ValidationError {
   field: string;
@@ -29,6 +34,10 @@ function isNonNegativeNumber(val: unknown): val is number {
 
 function isNonNegativeInteger(val: unknown): val is number {
   return isNonNegativeNumber(val) && Number.isInteger(val);
+}
+
+function isCostCurrency(val: unknown): val is CostCurrency {
+  return val === "USD" || val === "CNY";
 }
 
 function isValidISODate(val: unknown): boolean {
@@ -104,6 +113,48 @@ function validateModelBreakdown(
     });
   }
 
+  if (bd.costCurrency !== undefined && !isCostCurrency(bd.costCurrency)) {
+    errors.push({
+      field: `${prefix}.costCurrency`,
+      message: "must be USD or CNY",
+    });
+  }
+
+  return errors;
+}
+
+function validateCostTotals(costTotals: unknown): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  if (costTotals === undefined) {
+    return errors;
+  }
+
+  if (!Array.isArray(costTotals)) {
+    return [{ field: "costTotals", message: "must be an array" }];
+  }
+
+  for (let i = 0; i < costTotals.length; i++) {
+    const total = costTotals[i] as Record<string, unknown>;
+    const prefix = `costTotals[${i}]`;
+
+    if (typeof total !== "object" || total === null) {
+      errors.push({ field: prefix, message: "must be an object" });
+      continue;
+    }
+
+    if (!isCostCurrency(total.currency)) {
+      errors.push({ field: `${prefix}.currency`, message: "must be USD or CNY" });
+    }
+
+    if (!isNonNegativeNumber(total.amount)) {
+      errors.push({
+        field: `${prefix}.amount`,
+        message: "must be a non-negative number",
+      });
+    }
+  }
+
   return errors;
 }
 
@@ -165,6 +216,15 @@ export function validateReceiptData(data: unknown): ValidationResult {
       message: "must be a non-negative number",
     });
   }
+
+  if (
+    d.totalCostCurrency !== undefined &&
+    !isCostCurrency(d.totalCostCurrency)
+  ) {
+    errors.push({ field: "totalCostCurrency", message: "must be USD or CNY" });
+  }
+
+  errors.push(...validateCostTotals(d.costTotals));
 
   if (!isNonNegativeInteger(d.totalTokens)) {
     errors.push({
@@ -247,6 +307,16 @@ export function validateReceiptData(data: unknown): ValidationResult {
     sessionDate: d.sessionDate as string,
     timezone: d.timezone as string | undefined,
     totalCost: d.totalCost as number,
+    totalCostCurrency: d.totalCostCurrency as CostCurrency | undefined,
+    costTotals: Array.isArray(d.costTotals)
+      ? (d.costTotals as unknown[]).map((total) => {
+          const t = total as Record<string, unknown>;
+          return {
+            currency: t.currency as CostCurrency,
+            amount: t.amount as number,
+          } as CostTotal;
+        })
+      : undefined,
     totalTokens: d.totalTokens as number,
     inputTokens: d.inputTokens as number,
     outputTokens: d.outputTokens as number,
@@ -261,6 +331,7 @@ export function validateReceiptData(data: unknown): ValidationResult {
         cacheCreationTokens: b.cacheCreationTokens as number | undefined,
         cacheReadTokens: b.cacheReadTokens as number | undefined,
         cost: b.cost as number,
+        costCurrency: b.costCurrency as CostCurrency | undefined,
       } as ModelBreakdown;
     }),
     userMessageCount: d.userMessageCount as number,
