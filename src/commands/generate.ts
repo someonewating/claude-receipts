@@ -60,8 +60,9 @@ export class GenerateCommand {
         if (actualSessionId) {
           // From hook or when we have the full UUID — fetch directly by ID
           // for accurate totals (avoids sub-session slice issue with --breakdown)
-          sessionData =
-            await this.dataFetcher.fetchSessionById(actualSessionId);
+          sessionData = stdinData
+            ? await this.fetchSessionByIdWithRetry(actualSessionId)
+            : await this.dataFetcher.fetchSessionById(actualSessionId);
         } else {
           // Manual mode — discover session by prefix/name, then fetch accurate data
           sessionData =
@@ -229,6 +230,33 @@ export class GenerateCommand {
    */
   private outputToConsole(receipt: string): void {
     this.displayToConsole(receipt);
+  }
+
+  /**
+   * ccusage can lag behind Claude Code's SessionEnd hook. Retry briefly so the
+   * hook does not silently skip receipts for sessions that appear a moment later.
+   */
+  private async fetchSessionByIdWithRetry(sessionId: string) {
+    const attempts = 6;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await this.dataFetcher.fetchSessionById(sessionId);
+      } catch (error) {
+        lastError = error;
+
+        if (attempt < attempts) {
+          await this.delay(1000);
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**

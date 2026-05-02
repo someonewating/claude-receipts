@@ -1,5 +1,6 @@
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
+import { basename, extname } from "path";
 import type {
   TranscriptMessage,
   ParsedTranscript,
@@ -30,7 +31,9 @@ export class TranscriptParser {
 
     const firstUserMessage = userMessages[0];
     const firstPrompt = this.extractPromptText(firstUserMessage);
-    const sessionSlug = firstUserMessage?.slug || "unknown-session";
+    const sessionSlug =
+      firstUserMessage?.slug ||
+      this.createSessionSlug(firstUserMessage, firstPrompt, expandedPath);
 
     // Calculate duration
     const timestamps = messages
@@ -88,5 +91,37 @@ export class TranscriptParser {
     }
 
     return text.substring(0, maxLength).trim() + "...";
+  }
+
+  /**
+   * Claude Code versions may omit the slug field. Derive a stable, readable
+   * fallback from the project directory and first prompt instead.
+   */
+  private createSessionSlug(
+    message: TranscriptMessage | undefined,
+    firstPrompt: string,
+    transcriptPath: string,
+  ): string {
+    const projectName = message?.cwd ? basename(message.cwd) : "";
+    const promptName = firstPrompt === "No prompt available" ? "" : firstPrompt;
+    const fallbackName = basename(
+      transcriptPath,
+      extname(transcriptPath),
+    ).slice(0, 8);
+
+    const rawSlug = [projectName, promptName || fallbackName]
+      .filter(Boolean)
+      .join(" ");
+
+    return this.slugify(rawSlug) || "unknown-session";
+  }
+
+  private slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80)
+      .replace(/-+$/g, "");
   }
 }
