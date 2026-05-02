@@ -17,35 +17,50 @@ export interface PricedUsage {
   breakdown: CostBreakdown;
 }
 
+interface ModelPrice {
+  inputCacheHit: number;
+  inputCacheMiss: number;
+  output: number;
+}
+
 const DEEPSEEK_PRICES_CNY_PER_MILLION = {
-  inputCacheHit: 0.025,
-  inputCacheMiss: 3,
-  output: 6,
+  chat: {
+    inputCacheHit: 0.02,
+    inputCacheMiss: 1,
+    output: 2,
+  },
+  reasoner: {
+    inputCacheHit: 0.025,
+    inputCacheMiss: 3,
+    output: 6,
+  },
 } as const;
 
 export function calculateKnownModelCost(
   modelName: string,
   usage: TokenUsage,
 ): PricedUsage | undefined {
-  if (!isDeepSeekModel(modelName)) {
+  const pricing = getDeepSeekPricing(modelName);
+
+  if (!pricing) {
     return undefined;
   }
 
   const input = pricePerMillion(
     usage.inputTokens,
-    DEEPSEEK_PRICES_CNY_PER_MILLION.inputCacheMiss,
+    pricing.inputCacheMiss,
   );
   const output = pricePerMillion(
     usage.outputTokens,
-    DEEPSEEK_PRICES_CNY_PER_MILLION.output,
+    pricing.output,
   );
   const cacheCreation = pricePerMillion(
     usage.cacheCreationTokens,
-    DEEPSEEK_PRICES_CNY_PER_MILLION.inputCacheMiss,
+    pricing.inputCacheMiss,
   );
   const cacheRead = pricePerMillion(
     usage.cacheReadTokens,
-    DEEPSEEK_PRICES_CNY_PER_MILLION.inputCacheHit,
+    pricing.inputCacheHit,
   );
 
   return {
@@ -75,8 +90,22 @@ export function getCostTotals(
   }));
 }
 
-function isDeepSeekModel(modelName: string): boolean {
-  return modelName.toLowerCase().includes("deepseek");
+function getDeepSeekPricing(modelName: string): ModelPrice | undefined {
+  const normalized = modelName.toLowerCase();
+
+  if (!normalized.includes("deepseek")) {
+    return undefined;
+  }
+
+  if (normalized.includes("chat")) {
+    return DEEPSEEK_PRICES_CNY_PER_MILLION.chat;
+  }
+
+  if (normalized.includes("reasoner")) {
+    return DEEPSEEK_PRICES_CNY_PER_MILLION.reasoner;
+  }
+
+  return DEEPSEEK_PRICES_CNY_PER_MILLION.reasoner;
 }
 
 function pricePerMillion(tokens: number, price: number): number {
