@@ -1,43 +1,47 @@
-import { execa } from "execa";
+import { loadSessionData, loadSessionUsageById } from "ccusage/data-loader";
+import { logger as ccusageLogger } from "ccusage/logger";
 import type {
   CostCurrency,
-  CcusageResponse,
   CcusageSession,
   ModelBreakdown,
 } from "../types/ccusage.js";
 import { calculateKnownModelCost, getCostTotals } from "./pricing.js";
 
-interface CcusageEntry {
+ccusageLogger.level = 0;
+
+interface CcusageLoaderEntry {
   timestamp: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens?: number;
-  cacheReadTokens?: number;
-  model: string;
+  message: {
+    usage: {
+      input_tokens: number;
+      output_tokens: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
+    model?: string;
+  };
   costUSD?: number;
 }
 
-interface CcusageByIdResponse {
-  sessionId: string;
+interface CcusageSessionUsage {
   totalCost: number;
-  totalTokens: number;
-  entries: CcusageEntry[];
+  entries: CcusageLoaderEntry[];
 }
 
 export class DataFetcher {
   /**
    * Fetch accurate session data by exact session ID.
-   * Uses `ccusage session --id` which returns the true total cost
-   * (unlike --breakdown which splits into sub-session slices).
+   * Uses ccusage's data loader directly, avoiding the CLI's stdin-sensitive
+   * statusline behavior when spawned from hooks or other Node processes.
    */
   async fetchSessionById(sessionId: string): Promise<CcusageSession> {
-    const { stdout } = await execa(
-      "npx",
-      ["ccusage", "session", "--id", sessionId, "--json"],
-      { timeout: 30000 },
-    );
+    const data = (await loadSessionUsageById(
+      sessionId,
+    )) as CcusageSessionUsage | null;
 
-    const data: CcusageByIdResponse = JSON.parse(stdout);
+    if (!data) {
+      throw new Error(`No session data found for ${sessionId}`);
+    }
 
     // Aggregate entries by model
     const modelMap = new Map<
@@ -58,20 +62,23 @@ export class DataFetcher {
     let totalCacheRead = 0;
 
     for (const entry of data.entries) {
-      // Skip synthetic entries (no real model)
-      if (entry.model === "<synthetic>") continue;
+      const usage = entry.message.usage;
+      const model = entry.message.model || "unknown";
 
-      const input = entry.inputTokens || 0;
-      const output = entry.outputTokens || 0;
-      const cacheCreation = entry.cacheCreationTokens || 0;
-      const cacheRead = entry.cacheReadTokens || 0;
+      // Skip synthetic entries (no real model)
+      if (model === "<synthetic>") continue;
+
+      const input = usage.input_tokens || 0;
+      const output = usage.output_tokens || 0;
+      const cacheCreation = usage.cache_creation_input_tokens || 0;
+      const cacheRead = usage.cache_read_input_tokens || 0;
 
       totalInput += input;
       totalOutput += output;
       totalCacheCreation += cacheCreation;
       totalCacheRead += cacheRead;
 
-      const existing = modelMap.get(entry.model) || {
+      const existing = modelMap.get(model) || {
         inputTokens: 0,
         outputTokens: 0,
         cacheCreationTokens: 0,
@@ -86,7 +93,7 @@ export class DataFetcher {
       existing.cacheReadTokens += cacheRead;
       existing.totalTokens += input + output + cacheCreation + cacheRead;
       existing.costUSD += entry.costUSD || 0;
-      modelMap.set(entry.model, existing);
+      modelMap.set(model, existing);
     }
 
     // Use exact pricing for known non-Anthropic providers such as DeepSeek.
@@ -131,12 +138,13 @@ export class DataFetcher {
     };
 
     return {
-      sessionId: data.sessionId,
+      sessionId,
       inputTokens: totalInput,
       outputTokens: totalOutput,
       cacheCreationTokens: totalCacheCreation,
       cacheReadTokens: totalCacheRead,
-      totalTokens: data.totalTokens,
+      totalTokens:
+        totalInput + totalOutput + totalCacheCreation + totalCacheRead,
       totalCost: primaryTotal.amount,
       totalCostCurrency: primaryTotal.currency,
       costTotals,
@@ -156,19 +164,13 @@ export class DataFetcher {
    */
   async fetchSessionData(sessionQuery?: string): Promise<CcusageSession> {
     try {
-      const args = ["session", "--json", "--breakdown"];
+      const sessions = (await loadSessionData()) as CcusageSession[];
 
-      const { stdout } = await execa("npx", ["ccusage", ...args], {
-        timeout: 30000,
-      });
-
-      const response: CcusageResponse = JSON.parse(stdout);
-
-      if (!response.sessions || response.sessions.length === 0) {
+      if (sessions.length === 0) {
         throw new Error("No session data found");
       }
 
-      const validSessions = response.sessions.filter(
+      const validSessions = sessions.filter(
         (s) => s.projectPath && s.projectPath !== "Unknown Project",
       );
 
